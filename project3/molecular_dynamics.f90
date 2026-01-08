@@ -18,6 +18,12 @@ program dynamics
 
     double precision, allocatable :: acceleration(:, :)
 
+    integer :: step, nsteps, M
+    double precision :: dt
+
+    double precision, allocatable :: acc_new(:, :)
+
+
     ! -----------------------
     ! Lennard-Jones parameters
     ! -----------------------
@@ -50,6 +56,7 @@ program dynamics
     allocate(distance(Natoms,Natoms))
     allocate(velocity(Natoms,3))
     allocate(acceleration(Natoms,3))
+    allocate(acc_new(Natoms,3))
 
     ! -----------------------
     ! Read molecule
@@ -108,6 +115,53 @@ program dynamics
                                    acceleration(i,2), &
                                    acceleration(i,3)
     enddo
+
+    ! ---------------------------
+    ! Molecular dynamics parameters
+    ! ---------------------------
+    dt = 0.02d0
+    nsteps = 1000
+    M = 10
+
+    ! --------------------------
+    ! Molecular dynamics bucle
+    ! --------------------------
+    open(unit=20, file="traj.xyz", status="replace")
+
+        do step = 1, nsteps
+
+            ! ---- Update positions and half velocity ----
+            call verlet_step(Natoms, coord, velocity, acceleration, mass, dt)
+
+            ! ---- Recompute distances ----
+            call compute_distances(Natoms, coord, distance)
+
+            ! ---- New acceleration ----
+            call compute_acc(Natoms, coord, mass, distance, acc_new)
+
+            ! ---- Complete velocity update ----
+            velocity = velocity + 0.5d0 * acc_new * dt
+
+            ! ---- Update acceleration ----
+            acceleration = acc_new
+
+            ! ---- Write trajectory every M steps ----
+            if (mod(step, M) == 0) then
+                write(20,*) Natoms
+                write(20,*) "Step:", step
+                do i = 1, Natoms
+                    write(20,'(A,3f12.6)') "Ar", &
+                         coord(i,1)/angstrom_to_nm, &
+                         coord(i,2)/angstrom_to_nm, &
+                         coord(i,3)/angstrom_to_nm
+                end do
+            end if
+
+        end do
+
+        close(20)
+
+
 
 contains
 
@@ -248,6 +302,24 @@ contains
             end do
 
         end subroutine compute_acc
+
+        subroutine verlet_step(Natoms, coord, velocity, acceleration, mass, dt)
+            implicit none
+
+            integer, intent(in) :: Natoms
+            double precision, intent(inout) :: coord(Natoms,3)
+            double precision, intent(inout) :: velocity(Natoms,3)
+            double precision, intent(in) :: acceleration(Natoms,3)
+            double precision, intent(in) :: mass(Natoms)
+            double precision, intent(in) :: dt
+
+            integer :: i
+
+            do i = 1, Natoms
+                coord(i,:) = coord(i,:) + velocity(i,:) * dt + 0.5d0 * acceleration(i,:) * dt * dt
+                velocity(i,:) = velocity(i,:) + 0.5d0 * acceleration(i,:) * dt
+            end do
+        end subroutine verlet_step
 
 
 end program dynamics
