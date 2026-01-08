@@ -1,9 +1,6 @@
 program dynamics
     implicit none
 
-    ! -----------------------
-    ! Variables
-    ! -----------------------
     integer :: input_file
     integer :: Natoms
     integer :: ios
@@ -12,20 +9,21 @@ program dynamics
     double precision, parameter :: angstrom_to_nm = 0.1d0
 
     double precision :: epsilon, sigma
-    double precision :: Vtot
+    double precision :: Vtot, Ttot, Etot
 
     double precision, allocatable :: coord(:, :)
     double precision, allocatable :: mass(:)
     double precision, allocatable :: distance(:, :)
+    double precision, allocatable :: velocity(:, :)
 
     ! -----------------------
-    ! Lennard-Jones parameters (given in the homework data)
+    ! Lennard-Jones parameters
     ! -----------------------
-    epsilon = 0.997d0                    ! kJ/mol
-    sigma   = 3.405d0 * angstrom_to_nm   ! convert Å → nm
+    epsilon = 0.997d0
+    sigma   = 3.405d0 * angstrom_to_nm
 
     ! -----------------------
-    ! Open input file to read the initial coordinates
+    ! Open input file
     ! -----------------------
     input_file = 10
     open(unit=input_file, file="inp.txt", status="old", action="read", iostat=ios)
@@ -36,7 +34,7 @@ program dynamics
     end if
 
     ! -----------------------
-    ! Read number of atoms of your molecule
+    ! Read number of atoms
     ! -----------------------
     Natoms = read_Natoms(input_file)
     print *, "Number of atoms:", Natoms
@@ -48,13 +46,18 @@ program dynamics
     allocate(coord(Natoms,3))
     allocate(mass(Natoms))
     allocate(distance(Natoms,Natoms))
+    allocate(velocity(Natoms,3))
 
     ! -----------------------
-    ! Read molecule (Anstrong to nanometres)
+    ! Read molecule
     ! -----------------------
     call read_molecule(input_file, Natoms, coord, mass)
-
     close(input_file)
+
+    ! -----------------------
+    ! Initialize velocities to zero
+    ! -----------------------
+    velocity = 0.0d0
 
     ! -----------------------
     ! Print coordinates and masses
@@ -67,35 +70,36 @@ program dynamics
     print *
 
     ! -----------------------
-    ! Compute and print distances
+    ! Compute distances
     ! -----------------------
     call compute_distances(Natoms, coord, distance)
 
-    print *, "Internuclear distance matrix (nm):"
-    do i = 1, Natoms
-        write(*,'(100f10.4)') (distance(i,j), j=1,Natoms)
-    end do
-    print *
-
     ! -----------------------
-    ! Compute Lennard-Jones potential
+    ! Compute energies
     ! -----------------------
     Vtot = V(epsilon, sigma, Natoms, distance)
-    print *, "Total Lennard-Jones potential energy (kJ/mol):"
-    print *, Vtot
+    Ttot = T(Natoms, velocity, mass)
+    Etot = Ttot + Vtot
+
+    ! -----------------------
+    ! Print energies
+    ! -----------------------
+    print *, "Total kinetic energy T (kJ/mol):", Ttot
+    print *, "Total potential energy V (kJ/mol):", Vtot
+    print *, "Total energy E = T + V (kJ/mol):", Etot
 
 contains
 
-    ! -----------------------------------------------------------------------------
+    ! =====================================================
     integer function read_Natoms(input_file) result(Natoms)
         implicit none
         integer, intent(in) :: input_file
         read(input_file, *) Natoms
     end function read_Natoms
-    ! -----------------------------------------------------------------------------
+    ! =====================================================
 
 
-    ! -----------------------------------------------------------------------------
+    ! =====================================================
     subroutine read_molecule(input_file, Natoms, coord, mass)
         implicit none
         integer, intent(in) :: input_file
@@ -108,17 +112,13 @@ contains
 
         do i = 1, Natoms
             read(input_file, *) coord(i,1), coord(i,2), coord(i,3), mass(i)
-
-            ! Convert coordinates Å → nm
-            coord(i,1) = coord(i,1) * angstrom_to_nm
-            coord(i,2) = coord(i,2) * angstrom_to_nm
-            coord(i,3) = coord(i,3) * angstrom_to_nm
+            coord(i,:) = coord(i,:) * angstrom_to_nm
         end do
     end subroutine read_molecule
-    ! -----------------------------------------------------------------------------
+    ! =====================================================
 
 
-    ! ----------------------------------------------------------------------------
+    ! =====================================================
     subroutine compute_distances(Natoms, coord, distance)
         implicit none
         integer, intent(in) :: Natoms
@@ -137,10 +137,10 @@ contains
             end do
         end do
     end subroutine compute_distances
-    ! -----------------------------------------------------------------------------
+    ! =====================================================
 
 
-    ! -----------------------------------------------------------------------------
+    ! =====================================================
     double precision function V(epsilon, sigma, Natoms, distance)
         implicit none
         double precision, intent(in) :: epsilon, sigma
@@ -151,7 +151,6 @@ contains
         double precision :: r, sr6, sr12
 
         V = 0.0d0
-
         do i = 1, Natoms
             do j = i+1, Natoms
                 r = distance(i,j)
@@ -161,7 +160,26 @@ contains
             end do
         end do
     end function V
-    ! ----------------------------------------------------------------------------
+    ! =====================================================
+
+
+    ! =====================================================
+    double precision function T(Natoms, velocity, mass)
+        implicit none
+        integer, intent(in) :: Natoms
+        double precision, intent(in) :: velocity(Natoms,3)
+        double precision, intent(in) :: mass(Natoms)
+
+        integer :: i
+        double precision :: v2
+
+        T = 0.0d0
+        do i = 1, Natoms
+            v2 = velocity(i,1)**2 + velocity(i,2)**2 + velocity(i,3)**2
+            T = T + 0.5d0 * mass(i) * v2
+        end do
+    end function T
+    ! =====================================================
 
 end program dynamics
 
