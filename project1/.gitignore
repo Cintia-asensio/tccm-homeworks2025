@@ -1,0 +1,5 @@
+mp2_energy
+test_trexio
+*.o
+data/*.h5
+mp2_HW.pdf
