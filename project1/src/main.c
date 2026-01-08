@@ -1,14 +1,11 @@
-/*  hw_act_mp2 — Step 4
+/*  hw_act_mp2 — Step 5
  *
- *  This is Step 3 accumulative + Step 4:
- *   - Convert the ERI list (sparse) into a 4D array eri[p,q,r,s]
+ *  This is Step 4 (accumulative) + Step 5:
+ *   - Compute the closed-shell Hartree–Fock energy using h[p,q] and eri[p,q,r,s]
  *
- *  We do this because later (for HF / MP2) it is easier to access integrals with direct indexing.
- *
- *  In this step we:
- *   - Read the ERI in sparse format (eri_idx + eri_val)
- *   - Allocate a dense array of size mo_num^4 (initialized to 0)
- *   - Fill it using the 8-fold symmetry of (pq|rs)
+ *  Formula (spatial orbitals, closed-shell):
+ *   E_HF = E_nn + 2 * sum_i h_ii + sum_{i,j} [ 2*(ij|ij) - (ij|ji) ]
+ *  where i and j go over occupied orbitals (0..nocc-1).
  */
 
 #include <stdio.h>     /* printf, fprintf */
@@ -161,6 +158,26 @@ int main(int argc, char** argv)
     eri_val = NULL;
   }
 
+  /* Step 5: compute closed-shell Hartree–Fock energy */
+
+  /* Electronic part:
+     E_elec = 2*sum_i h_ii + sum_{i,j} [ 2*(ij|ij) - (ij|ji) ] */
+  double e_hf_elec = 0.0;
+
+  for (int i = 0; i < nocc; ++i) {
+    e_hf_elec += 2.0 * h[(size_t)i * (size_t)mo_num + (size_t)i];
+  }
+
+  for (int i = 0; i < nocc; ++i) {
+    for (int j = 0; j < nocc; ++j) {
+      double coul = eri[idx4(i,j,i,j,mo_num)];
+      double exch = eri[idx4(i,j,j,i,mo_num)];
+      e_hf_elec += 2.0 * coul - exch;
+    }
+  }
+
+  double e_hf_tot = e_nn + e_hf_elec;
+
   /* Close the TREXIO file */
   rc = trexio_close(f);
   if (rc != TREXIO_SUCCESS) {
@@ -173,6 +190,10 @@ int main(int argc, char** argv)
   printf("E_nn:   %.10f\n", e_nn);
   printf("mo_num: %d\n", (int) mo_num);
   printf("nocc:   %d\n", (int) nocc);
+  
+  /* Print HF energies (this is the new result of Step 5) */
+  printf("E_HF_elec:  %.10f\n", e_hf_elec);
+  printf("E_HF_total: %.10f\n", e_hf_tot);
 
   /* Free allocated memory */
   free(h);
