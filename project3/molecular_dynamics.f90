@@ -16,6 +16,8 @@ program dynamics
     double precision, allocatable :: distance(:, :)
     double precision, allocatable :: velocity(:, :)
 
+    double precision, allocatable :: acceleration(:, :)
+
     ! -----------------------
     ! Lennard-Jones parameters
     ! -----------------------
@@ -47,6 +49,7 @@ program dynamics
     allocate(mass(Natoms))
     allocate(distance(Natoms,Natoms))
     allocate(velocity(Natoms,3))
+    allocate(acceleration(Natoms,3))
 
     ! -----------------------
     ! Read molecule
@@ -87,6 +90,24 @@ program dynamics
     print *, "Total kinetic energy T (kJ/mol):", Ttot
     print *, "Total potential energy V (kJ/mol):", Vtot
     print *, "Total energy E = T + V (kJ/mol):", Etot
+
+    ! -----------------------
+    !Call compute acceleration subroutine
+    ! -----------------------
+    call compute_acc(Natoms, coord, mass, distance, acceleration)
+
+    ! -----------------------
+    !Print acceleration results
+    ! -----------------------
+    print *
+    print *, "Acceleration vectors (nm/ps²):"
+    print *, "Atom      ax      ay      az"
+
+    do i = 1, Natoms
+        write(*, '(i4,3f16.8)') i, acceleration(i,1), &
+                                   acceleration(i,2), &
+                                   acceleration(i,3)
+    enddo
 
 contains
 
@@ -180,6 +201,54 @@ contains
         end do
     end function T
     ! =====================================================
+
+    subroutine compute_acc(Natoms, coord, mass, distance, acceleration)
+            implicit none
+
+            integer, intent(in) :: Natoms
+            double precision, intent(in) :: coord(Natoms,3)
+            double precision, intent(in) :: mass(Natoms)
+            double precision, intent(in) :: distance(Natoms,Natoms)
+            double precision, intent(out) :: acceleration(Natoms,3)
+
+            integer :: i, j
+            double precision :: rij, Uij
+            double precision, parameter :: epsilon = 0.997d0   ! kJ/mol
+            double precision, parameter :: sigma   = 0.3405d0  ! nm (3.405 Å)
+
+            ! Initialize accelerations
+            acceleration(:,:) = 0.0d0
+
+            do i = 1, Natoms
+                do j = 1, Natoms
+
+                    if (j /= i) then
+                        rij = distance(i,j)
+
+                        ! U(r) according to equation (6)
+                        Uij = 24.0d0 * epsilon / rij * &
+                              ( (sigma/rij)**6 - 2.0d0*(sigma/rij)**12 )
+
+                        ! Components of acceleration (equation 5)
+                        acceleration(i,1) = acceleration(i,1) - &
+                            Uij * (coord(i,1) - coord(j,1)) / rij
+
+                        acceleration(i,2) = acceleration(i,2) - &
+                            Uij * (coord(i,2) - coord(j,2)) / rij
+        
+                        acceleration(i,3) = acceleration(i,3) - &
+                            Uij * (coord(i,3) - coord(j,3)) / rij
+                    end if
+
+                end do
+
+                ! Divide by mass of atom i
+                acceleration(i,:) = acceleration(i,:) / mass(i)
+
+            end do
+
+        end subroutine compute_acc
+
 
 end program dynamics
 
