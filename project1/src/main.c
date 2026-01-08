@@ -1,25 +1,18 @@
-/*  hw_act_mp2 — Step 3
+/*  hw_act_mp2 — Step 4
  *
- *  This is Step 1 + Step 2 + Step 3:
- *   - Read the 2-electron integrals (ERI) in "sparse" format
+ *  This is Step 3 accumulative + Step 4:
+ *   - Convert the ERI list (sparse) into a 4D array eri[p,q,r,s]
  *
- *  In TREXIO (MO basis) the data is stored as:
- *   - mo_2e_int_eri_size : number of stored (non-zero) integrals
- *   - mo_2e_int_eri      : read a chunk of integrals (here we just read all at once)
+ *  We do this because later (for HF / MP2) it is easier to access integrals with direct indexing.
  *
- *  The format is:
- *   - eri_idx : int32_t array of length 4*eri_size
- *       for each k:
- *         eri_idx[4*k+0] = p
- *         eri_idx[4*k+1] = q
- *         eri_idx[4*k+2] = r
- *         eri_idx[4*k+3] = s
- *   - eri_val : double array of length eri_size
- *       eri_val[k] = <pq|rs>
+ *  In this step we:
+ *   - Read the ERI in sparse format (eri_idx + eri_val)
+ *   - Allocate a dense array of size mo_num^4 (initialized to 0)
+ *   - Fill it using the 8-fold symmetry of (pq|rs)
  */
 
 #include <stdio.h>     /* printf, fprintf */
-#include <stdlib.h>    /* malloc, free, exit */
+#include <stdlib.h>    /* malloc, calloc, free, exit */
 #include <inttypes.h>  /* PRId64 for printing int64_t */
 #include <trexio.h>    /* TREXIO API */
 
@@ -28,6 +21,12 @@ static void die_trexio(const char* msg, trexio_exit_code rc)
 {
   fprintf(stderr, "%s\n%s\n", msg, trexio_string_of_error(rc));
   exit(1);
+}
+
+/* Step 4 helper: convert (p,q,r,s) to a single index for a 1D array */
+static size_t idx4(int p, int q, int r, int s, int mo_num)
+{
+  return (((size_t)p * (size_t)mo_num + (size_t)q) * (size_t)mo_num + (size_t)r) * (size_t)mo_num + (size_t)s;
 }
 
 int main(int argc, char** argv)
@@ -102,6 +101,13 @@ int main(int argc, char** argv)
 
   printf("eri_size: %" PRId64 "\n", eri_size);
 
+  /* Step 4: build a dense ERI array (initialized to 0.0) */
+  double* eri = (double*) calloc((size_t)mo_num * (size_t)mo_num * (size_t)mo_num * (size_t)mo_num, sizeof(double));
+  if (eri == NULL) {
+    fprintf(stderr, "Error: calloc failed for dense ERI (mo_num=%d)\n", (int)mo_num);
+    exit(1);
+  }
+
   /* If there is nothing stored, we skip reading the arrays */
   if (eri_size > 0) {
 
@@ -123,11 +129,32 @@ int main(int argc, char** argv)
       die_trexio("Cannot read mo_2e_int_eri:", rc);
     }
 
-    /* Quick check: print the first integral from the list */
-    printf("ERI[0]: (%d,%d,%d,%d) = %.10f\n",
-           (int)eri_idx[0], (int)eri_idx[1], (int)eri_idx[2], (int)eri_idx[3], eri_val[0]);
+    /* Fill the dense tensor using symmetry.
+       Here we just copy each (p,q,r,s) into the 8 equivalent positions. */
+    for (int64_t k = 0; k < buffer_size; ++k) {
+      int p = eri_idx[4*k + 0];
+      int q = eri_idx[4*k + 1];
+      int r = eri_idx[4*k + 2];
+      int s = eri_idx[4*k + 3];
+      double v = eri_val[k];
 
-    /* Free buffers (later steps will store ERI in a more useful way) */
+      /* 8-fold symmetry */
+      eri[idx4(p,q,r,s,mo_num)] = v;
+      eri[idx4(r,q,p,s,mo_num)] = v;
+      eri[idx4(p,s,r,q,mo_num)] = v;
+      eri[idx4(r,s,p,q,mo_num)] = v;
+
+      eri[idx4(q,p,s,r,mo_num)] = v;
+      eri[idx4(s,p,q,r,mo_num)] = v;
+      eri[idx4(q,r,s,p,mo_num)] = v;
+      eri[idx4(s,r,q,p,mo_num)] = v;
+    }
+
+    /* Quick check using two equivalent permutations */
+    printf("ERI dense check: (0,0,1,0)=%.10f  (1,0,0,0)=%.10f\n",
+           eri[idx4(0,0,1,0,mo_num)], eri[idx4(1,0,0,0,mo_num)]);
+
+    /* Free buffers (we keep only the dense eri array for the next steps) */
     free(eri_idx);
     free(eri_val);
     eri_idx = NULL;
@@ -150,6 +177,9 @@ int main(int argc, char** argv)
   /* Free allocated memory */
   free(h);
   h = NULL;
+
+  free(eri);
+  eri = NULL;
 
   return 0;
 }
