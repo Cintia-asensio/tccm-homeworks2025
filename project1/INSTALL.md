@@ -17,6 +17,23 @@ cmake -B build
 cmake --build build
 cmake --install build
 ```
+## Alternative installation using autotools (Linux)
+On some Linux systems, TREXIO can also be installed using the autotools build system.
+This method requires a source release tarball and may require administrator privileges.
+```
+wget https://github.com/TREX-CoE/trexio/releases/download/v2.5.0/trexio-2.5.0.tar.gz
+tar -zxvf trexio-2.5.0.tar.gz
+cd trexio-2.5.0
+./configure
+make
+sudo make install
+```
+On Linux systems, it may also be necessary to update the dynamic linker cache:
+```
+sudo ldconfig
+```
+Note: ldconfig is only available on Linux systems and is not required on macOS.
+
 ## Building
 To build the program from the repository root:
 ```
