@@ -32,16 +32,20 @@ README.md   this file
 
 ## Quick start
 To build the program, run:
+```
 make clean
 make
-
+```
 To run the program on a TREXIO file:
+```
 ./main path/to/file.h5
-
+```
 Example:
+```
 ./main data/h2o.h5
-
+```
 ## Example output
+```
 File:   data/h2o.h5
 E\_nn:   9.1949655588
 mo\_num: 24
@@ -50,7 +54,7 @@ E\_HF\_elec:  -85.2217642670
 E\_HF\_total: -76.0267987082
 E\_MP2\_corr: -0.2039599741
 E\_MP2\_total: -76.2307586823
-
+```
 ## Notes
 - MP2 is computed using the closed-shell canonical expression with spatial orbitals.
 - Two-electron integrals are read in sparse format and expanded using 8-fold symmetry.
@@ -66,4 +70,3 @@ See the LICENSE file.
 
 ## Authors
 See the AUTHORS file.
-
