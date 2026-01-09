@@ -3,3 +3,4 @@ test_trexio
 *.o
 data/*.h5
 mp2_HW.pdf
+results/
