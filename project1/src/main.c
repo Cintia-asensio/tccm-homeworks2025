@@ -1,14 +1,12 @@
-/*  hw_act_mp2 — Step 4
+/*  hw_act_mp2 — Step 6
  *
- *  This is Step 3 accumulative + Step 4:
- *   - Convert the ERI list (sparse) into a 4D array eri[p,q,r,s]
+ *  This is all till Step 5 + step 6 thing:
+ *   - Read MO orbital energies (mo_energy)
+ *   - Compute the MP2 correlation energy and the total MP2 energy
  *
- *  We do this because later (for HF / MP2) it is easier to access integrals with direct indexing.
- *
- *  In this step we:
- *   - Read the ERI in sparse format (eri_idx + eri_val)
- *   - Allocate a dense array of size mo_num^4 (initialized to 0)
- *   - Fill it using the 8-fold symmetry of (pq|rs)
+ *  MP2 (closed-shell, spatial orbitals):
+ *   E_MP2 = sum_{ij}^{occ} sum_{ab}^{virt} (ij|ab) * [ 2(ij|ab) - (ij|ba) ]
+ *           / (eps_i + eps_j - eps_a - eps_b)
  */
 
 #include <stdio.h>     /* printf, fprintf */
@@ -90,6 +88,21 @@ int main(int argc, char** argv)
   printf("h(1,0) = %.10f\n", h[1*mo_num + 0]);
   printf("h(1,1) = %.10f\n", h[1*mo_num + 1]);
 
+  /* Step 6: read MO energies (eps_p) for the MP2 denominators */
+  double* eps = (double*) malloc((size_t)mo_num * sizeof(double));
+  if (eps == NULL) {
+    fprintf(stderr, "Error: malloc failed for mo_energy (mo_num=%d)\n", (int)mo_num);
+    exit(1);
+  }
+
+  rc = trexio_read_mo_energy(f, eps);
+  if (rc != TREXIO_SUCCESS) {
+    die_trexio("Cannot read mo_energy:", rc);
+  }
+
+  /* Small check so we know it was read */
+  printf("eps(0) = %.10f\n", eps[0]);
+
   /* Step 3: read ERI in sparse format */
 
   /* Read how many ERI entries are stored */
@@ -161,6 +174,48 @@ int main(int argc, char** argv)
     eri_val = NULL;
   }
 
+  /* Step 5: compute closed-shell Hartree-Fock energy */
+
+  /* Electronic part:
+     E_elec = 2*sum_i h_ii + sum_{i,j} [ 2*(ij|ij) - (ij|ji) ] */
+  double e_hf_elec = 0.0;
+
+  for (int i = 0; i < nocc; ++i) {
+    e_hf_elec += 2.0 * h[(size_t)i * (size_t)mo_num + (size_t)i];
+  }
+
+  for (int i = 0; i < nocc; ++i) {
+    for (int j = 0; j < nocc; ++j) {
+      double coul = eri[idx4(i,j,i,j,mo_num)];
+      double exch = eri[idx4(i,j,j,i,mo_num)];
+      e_hf_elec += 2.0 * coul - exch;
+    }
+  }
+
+  double e_hf_tot = e_nn + e_hf_elec;
+
+  /* Step 6: MP2 correlation energy (closed-shell, spatial orbitals) */
+  double e_mp2 = 0.0;
+
+  for (int i = 0; i < nocc; ++i) {
+    for (int j = 0; j < nocc; ++j) {
+      for (int a = nocc; a < mo_num; ++a) {
+        for (int b = nocc; b < mo_num; ++b) {
+          double ijab  = eri[idx4(i,j,a,b,mo_num)];
+          double ijba  = eri[idx4(i,j,b,a,mo_num)];
+          double denom = eps[i] + eps[j] - eps[a] - eps[b];
+
+          /* Just in case denom is zero (normally it should not be) */
+          if (denom != 0.0) {
+            e_mp2 += ijab * (2.0 * ijab - ijba) / denom;
+          }
+        }
+      }
+    }
+  }
+
+  double e_mp2_tot = e_hf_tot + e_mp2;
+
   /* Close the TREXIO file */
   rc = trexio_close(f);
   if (rc != TREXIO_SUCCESS) {
@@ -174,12 +229,23 @@ int main(int argc, char** argv)
   printf("mo_num: %d\n", (int) mo_num);
   printf("nocc:   %d\n", (int) nocc);
 
+  /* Print HF energies (this is the new result of Step 5) */
+  printf("E_HF_elec:  %.10f\n", e_hf_elec);
+  printf("E_HF_total: %.10f\n", e_hf_tot);
+
+  /* Step 6 results */
+  printf("E_MP2_corr:  %.10f\n", e_mp2);
+  printf("E_MP2_total: %.10f\n", e_mp2_tot);
+
   /* Free allocated memory */
   free(h);
   h = NULL;
 
   free(eri);
   eri = NULL;
+
+  free(eps);
+  eps = NULL;
 
   return 0;
 }
